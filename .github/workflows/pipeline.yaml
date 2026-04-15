@@ -1,4 +1,4 @@
-name: Controlled CI/CD Pipeline
+name: CI/CD Conditional Workflow
 
 on:
   push:
@@ -19,10 +19,9 @@ jobs:
         with:
           python-version: "3.10"
 
-      - name: Install minimal dependencies
+      - name: Install linter dependencies
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install flake8
 
       - name: Run linter
@@ -31,11 +30,8 @@ jobs:
 
   train:
     needs: linter
+    if: ${{ needs.linter.result == 'success' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[run-train]') }}
     runs-on: ubuntu-latest
-    if: >
-      needs.linter.result == 'success' &&
-      github.ref == 'refs/heads/main' &&
-      contains(github.event.head_commit.message, '[run-train]')
 
     steps:
       - name: Checkout repository
@@ -59,7 +55,7 @@ jobs:
       - name: Create error_logs.txt on failure
         if: ${{ failure() }}
         run: |
-          cat logs/train_error.txt > error_logs.txt 2>/dev/null || echo "Training failed." > error_logs.txt
+          cat logs/train_error.txt > error_logs.txt 2>/dev/null || echo "Training failed, but no stderr log was found." > error_logs.txt
 
       - name: Upload error logs artifact
         if: ${{ failure() }}
