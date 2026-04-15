@@ -1,0 +1,73 @@
+name: Controlled CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_dispatch:
+
+jobs:
+  linter:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install minimal dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install flake8
+
+      - name: Run linter
+        run: |
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  train:
+    needs: linter
+    runs-on: ubuntu-latest
+    if: >
+      needs.linter.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      contains(github.event.head_commit.message, '[run-train]')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install training dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run training
+        run: |
+          mkdir -p logs
+          python train.py > logs/train_output.txt 2> logs/train_error.txt
+
+      - name: Create error_logs.txt on failure
+        if: ${{ failure() }}
+        run: |
+          cat logs/train_error.txt > error_logs.txt 2>/dev/null || echo "Training failed." > error_logs.txt
+
+      - name: Upload error logs artifact
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-logs
+          path: error_logs.txt
+
+      - name: Cleanup
+        if: ${{ always() }}
+        run: echo "Cleaning up temporary cloud volumes..."
